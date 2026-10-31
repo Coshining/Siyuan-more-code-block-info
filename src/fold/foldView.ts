@@ -114,26 +114,26 @@ export function renderFoldView(block: HTMLElement): void {
     let html = "";
     let hideUntil = -1;
     for (let i = 0; i < items.length; i++) {
-        if (i > hideUntil) {
-            const region = regions.get(i);
-            if (region && folded.has(i)) {
-                hideUntil = region.end;
-            }
-        }
-        const hidden = hideUntil >= 0 && i <= hideUntil;
+        const region = regions.get(i);
+        const foldedStart = region !== undefined && folded.has(i);
+        // 折叠时保留起始行，仅隐藏其后的行（此判断必须在更新 hideUntil 之前）
+        const hidden = i <= hideUntil;
         const classes = ["code-line"];
         if (hidden) {
             classes.push("code-line--hidden");
         }
-        if (regions.has(i)) {
+        if (region) {
             classes.push("code-line--foldable");
         }
-        if (regions.has(i) && folded.has(i)) {
+        if (foldedStart) {
             classes.push("code-line--folded");
         }
         html += `<div class="${classes.join(" ")}" data-line="${i}">${highlightLine(items[i], lang)}</div>`;
         if (i < items.length - 1) {
             html += "\n";
+        }
+        if (foldedStart && region) {
+            hideUntil = region.end;
         }
     }
     if (trailingNewline) {

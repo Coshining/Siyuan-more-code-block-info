@@ -2,7 +2,7 @@
 
 .code-block[data-more-code-info] {
     > .protyle-action {
-        display: flex;
+        display: flex !important;
         align-items: center;
         gap: 2px;
         padding: 3px 8px;
@@ -11,6 +11,8 @@
         font-size: 13px;
         line-height: 26px;
         user-select: none;
+        opacity: 1 !important;
+        visibility: visible !important;
 
         // 右侧分组之间用分隔线
         .protyle-action__language,
@@ -21,6 +23,15 @@
             padding-left: 8px;
             margin-left: 4px;
         }
+    }
+
+    // 语言与原生图标常驻显示，不随鼠标移开而消失
+    .protyle-action__language,
+    .protyle-action__copy,
+    .protyle-action__menu {
+        display: inline-flex !important;
+        opacity: 1 !important;
+        visibility: visible !important;
     }
 
     // 整块收起按钮
@@ -161,8 +172,12 @@
     }
 }
 
-// 整块收起：只显示标题栏
+// 整块收起：只显示标题栏，并为标题栏预留足够高度，避免与下一行重叠
 .code-block[data-more-code-info][data-fold="true"] {
+    height: auto !important;
+    min-height: 40px !important;
+    overflow: visible !important;
+
     > .hljs,
     > .protyle-attr {
         display: none !important;
