@@ -1,0 +1,64 @@
+{
+  "name": "siyuan-more-code-block-info",
+  "author": "Co-shining",
+  "url": "https://github.com/Co-shining/Siyuan-more-code-block-info",
+  "version": "0.1.0",
+  "minAppVersion": "3.8.5",
+  "kernels": [
+    "windows",
+    "linux",
+    "darwin",
+    "ios",
+    "android",
+    "harmony",
+    "docker",
+    "all"
+  ],
+  "backends": [
+    "windows",
+    "linux",
+    "darwin",
+    "ios",
+    "android",
+    "harmony",
+    "docker",
+    "all"
+  ],
+  "frontends": [
+    "desktop",
+    "mobile",
+    "browser-desktop",
+    "browser-mobile",
+    "desktop-window",
+    "all"
+  ],
+  "disabledInPublish": true,
+  "displayName": {
+    "default": "Code Block More Info",
+    "zh-CN": "代码块更多信息"
+  },
+  "description": {
+    "default": "Enrich the code block header with a name, highlight theme and folding.",
+    "zh-CN": "为代码块标题栏增加名称、高亮主题与折叠功能。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh-CN": "README.zh-CN.md"
+  },
+  "icon": "icon.png",
+  "preview": "preview.png",
+  "funding": {
+    "openCollective": "",
+    "patreon": "",
+    "github": "",
+    "custom": []
+  },
+  "keywords": [
+    "代码块",
+    "code block",
+    "高亮",
+    "highlight",
+    "折叠",
+    "folding"
+  ]
+}

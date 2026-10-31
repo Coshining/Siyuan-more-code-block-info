@@ -1,0 +1,24 @@
+{
+  "name": "siyuan-more-code-block-info",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "思源笔记代码块更多信息插件：名称、语言、高亮主题与折叠",
+  "author": "Co-shining",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "vite build",
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "sass": "^1.77.8",
+    "siyuan": "^1.2.5",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.8"
+  }
+}

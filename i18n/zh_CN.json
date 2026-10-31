@@ -1,0 +1,11 @@
+{
+  "namePlaceholder": "请输入代码块名称",
+  "foldCode": "收起代码块",
+  "unfoldCode": "展开代码块",
+  "themeFollowDefault": "跟随默认",
+  "themeFollowSiyuan": "跟随思源",
+  "defaultThemeTitle": "默认代码高亮主题",
+  "defaultThemeDesc": "未单独设置主题的代码块将使用此主题；选择「跟随思源」则不覆盖原生主题。",
+  "copy": "复制",
+  "more": "更多"
+}

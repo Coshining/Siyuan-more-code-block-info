@@ -1,0 +1,11 @@
+{
+  "namePlaceholder": "Enter code block name",
+  "foldCode": "Collapse code block",
+  "unfoldCode": "Expand code block",
+  "themeFollowDefault": "Follow default",
+  "themeFollowSiyuan": "Follow SiYuan",
+  "defaultThemeTitle": "Default code highlight theme",
+  "defaultThemeDesc": "Code blocks without an explicit theme will use this theme. Choose \"Follow SiYuan\" to keep the native theme.",
+  "copy": "Copy",
+  "more": "More"
+}

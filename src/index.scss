@@ -1,0 +1,218 @@
+// 代码块标题栏（仅本插件标记过的块生效）
+
+.code-block[data-more-code-info] {
+    > .protyle-action {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px 8px;
+        background: var(--b3-theme-background);
+        border-bottom: 1px solid var(--b3-border-color);
+        font-size: 13px;
+        line-height: 26px;
+        user-select: none;
+
+        // 右侧分组之间用分隔线
+        .protyle-action__language,
+        .code-block-theme,
+        .protyle-action__copy,
+        .protyle-action__menu {
+            border-left: 1px solid var(--b3-border-color);
+            padding-left: 8px;
+            margin-left: 4px;
+        }
+    }
+
+    // 整块收起按钮
+    .code-block-collapse {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        color: var(--b3-theme-on-background);
+        opacity: 0.72;
+
+        svg {
+            width: 12px;
+            height: 12px;
+            fill: currentColor;
+        }
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    // 名称输入框
+    .code-block-name {
+        flex: 0 1 240px;
+        min-width: 120px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--b3-theme-on-background);
+        font-size: 13px;
+        line-height: 22px;
+        padding: 1px 6px;
+        outline: none;
+
+        &::placeholder {
+            color: var(--b3-theme-on-background);
+            opacity: 0.45;
+        }
+
+        &:hover {
+            border-color: var(--b3-border-color);
+        }
+
+        &:focus {
+            border-color: var(--b3-theme-primary);
+            background: var(--b3-theme-surface);
+        }
+    }
+
+    // 语言（复用原生元素，仅调整样式）
+    .protyle-action__language {
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        opacity: 0.8;
+
+        &::after {
+            content: "";
+            display: inline-block;
+            width: 0;
+            height: 0;
+            margin-left: 6px;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid currentColor;
+            opacity: 0.6;
+        }
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    // 高亮主题下拉
+    .code-block-theme {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+
+        &__trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            border: 0;
+            background: transparent;
+            color: var(--b3-theme-on-background);
+            cursor: pointer;
+            padding: 0 6px;
+            opacity: 0.8;
+
+            svg {
+                width: 10px;
+                height: 10px;
+                fill: currentColor;
+                opacity: 0.6;
+            }
+
+            &:hover {
+                opacity: 1;
+            }
+        }
+
+        &__menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            z-index: 1000;
+            min-width: 160px;
+            max-height: 320px;
+            overflow: auto;
+            background: var(--b3-theme-surface);
+            border: 1px solid var(--b3-border-color);
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+            padding: 4px 0;
+        }
+
+        &__item {
+            padding: 5px 12px;
+            cursor: pointer;
+            color: var(--b3-theme-on-surface, var(--b3-theme-on-background));
+            font-size: 13px;
+
+            &:hover {
+                background: var(--b3-list-hover, rgba(127, 127, 127, 0.12));
+            }
+
+            &--current {
+                color: var(--b3-theme-primary);
+            }
+        }
+    }
+}
+
+// 整块收起：只显示标题栏
+.code-block[data-more-code-info][data-fold="true"] {
+    > .hljs,
+    > .protyle-attr {
+        display: none !important;
+    }
+}
+
+// 块内折叠视图
+.code-block[data-more-code-info] {
+    .code-fold-lines {
+        .code-line {
+            position: relative;
+            padding-left: 16px;
+            min-height: 1.4em;
+            min-height: 1lh;
+            white-space: pre-wrap;
+            word-break: break-word;
+
+            &::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 16px;
+                height: 100%;
+                text-align: center;
+                color: var(--b3-theme-on-background);
+                opacity: 0.55;
+                font-size: 10px;
+                line-height: 1.625;
+            }
+
+            &--foldable::before {
+                content: "▾";
+                cursor: pointer;
+            }
+
+            &--folded::before {
+                content: "▸";
+                cursor: pointer;
+            }
+
+            &--folded::after {
+                content: " ⋯";
+                color: var(--b3-theme-on-background);
+                opacity: 0.5;
+            }
+
+            &--hidden {
+                display: none;
+            }
+        }
+    }
+}
