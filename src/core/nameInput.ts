@@ -2,6 +2,7 @@ import { ATTR_NAME, NAME_MAX_LENGTH } from "../constants";
 import { getI18n } from "../context";
 import { getBlockId, removeBlockAttr, setBlockAttr } from "../api";
 import { getCommittedName, registerNameInput, setCommittedName } from "./nameIsolation";
+import { ensureCaretGuard } from "./nameCaret";
 
 /** 创建代码块名称输入框，并绑定持久化 */
 export function createNameInput(block: HTMLElement): HTMLInputElement {
@@ -18,6 +19,8 @@ export function createNameInput(block: HTMLElement): HTMLInputElement {
 
     // 隔离思源编辑器层的指针/键盘事件，避免块收起后输入框被持续选中、无法编辑
     registerNameInput(input, input.value);
+    // 输入时若文字被整体选中，自动把光标收敛到末尾，避免覆盖已有内容
+    ensureCaretGuard();
 
     input.addEventListener("focus", () => {
         input.readOnly = false;
