@@ -23,8 +23,8 @@ export const HLJS_VERSION = "11.12.0";
 /** 表示「跟随思源原生主题」的空值 */
 export const FOLLOW_SIYUAN = "";
 
-/** 块内折叠 gutter 宽度（px），需与 SCSS 保持一致 */
-export const FOLD_GUTTER_WIDTH = 16;
+/** 块内折叠 gutter 宽度（px），需与 SCSS 中 .code-line::before 的宽度保持一致 */
+export const FOLD_GUTTER_WIDTH = 14;
 
 /** 常用高亮主题列表 */
 export const THEME_OPTIONS: ThemeOption[] = [

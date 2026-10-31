@@ -17,6 +17,8 @@ interface OriginalState {
 const originalMap = new WeakMap<HTMLElement, OriginalState>();
 /** 按块 ID 记录的折叠状态（起始行集合），跨重渲染保留 */
 const foldedMap = new Map<string, Set<number>>();
+/** 被折叠隐藏的行对应的行号标记类 */
+const LINE_NUMBER_HIDDEN = "code-fold-number--hidden";
 
 function getHljs(block: HTMLElement): HTMLElement | null {
     return block.querySelector<HTMLElement>(":scope > .hljs");
@@ -52,10 +54,36 @@ function escapeHtml(text: string): string {
         .replace(/"/g, "&quot;");
 }
 
+/** 代码元素内是否已经渲染过折叠行 */
+function hasRenderedLines(codeEl: HTMLElement): boolean {
+    return codeEl.querySelector(":scope > .code-line") !== null;
+}
+
+/** 思源行号容器（.hljs 的第一个子元素），未开启行号时返回 null */
+function getLineNumberRows(block: HTMLElement): HTMLElement | null {
+    const rows = getHljs(block)?.firstElementChild as HTMLElement | null | undefined;
+    if (!rows || !rows.classList.contains("protyle-linenumber__rows")) {
+        return null;
+    }
+    return rows;
+}
+
+/** 同步行号：隐藏被折叠行对应的行号，避免行号与代码行错位 */
+function syncLineNumbers(block: HTMLElement, hiddenLines: Set<number>): void {
+    const rows = getLineNumberRows(block);
+    if (!rows) {
+        return;
+    }
+    const children = rows.children;
+    for (let i = 0; i < children.length; i++) {
+        children[i].classList.toggle(LINE_NUMBER_HIDDEN, hiddenLines.has(i));
+    }
+}
+
 /** 块内折叠视图是否处于激活状态 */
 export function isFoldViewActive(block: HTMLElement): boolean {
     const codeEl = getCodeEl(block);
-    return !!codeEl && codeEl.classList.contains("code-fold-lines");
+    return !!codeEl && codeEl.classList.contains("code-fold-lines") && hasRenderedLines(codeEl);
 }
 
 /** 渲染块内折叠视图（仅在非聚焦且高亮完成后） */
@@ -68,7 +96,7 @@ export function renderFoldView(block: HTMLElement): void {
         return;
     }
     const codeEl = getCodeEl(block);
-    if (!codeEl || codeEl.classList.contains("code-fold-lines") || isFocused(block, codeEl)) {
+    if (!codeEl || hasRenderedLines(codeEl) || isFocused(block, codeEl)) {
         return;
     }
 
@@ -80,15 +108,15 @@ export function renderFoldView(block: HTMLElement): void {
     }
     const folded = foldedMap.get(getBlockId(block)) ?? new Set<number>();
 
-    if (!originalMap.has(codeEl)) {
-        originalMap.set(codeEl, { html: codeEl.innerHTML, text });
-    }
-    const state = originalMap.get(codeEl)!;
+    // 每次都从思源的原始 DOM 重新捕获，避免把折叠视图自身的行元素当成原始内容
+    const state: OriginalState = { html: codeEl.innerHTML, text };
+    originalMap.set(codeEl, state);
     // 复用思源原始高亮结果按行拆分，避免重新高亮导致样式丢失
     const lineHtmls = splitLinesFromHtml(state.html);
 
     let html = "";
     let hideUntil = -1;
+    const hiddenLines = new Set<number>();
     for (let i = 0; i < items.length; i++) {
         const region = regions.get(i);
         const foldedStart = region !== undefined && folded.has(i);
@@ -97,6 +125,7 @@ export function renderFoldView(block: HTMLElement): void {
         const classes = ["code-line"];
         if (hidden) {
             classes.push("code-line--hidden");
+            hiddenLines.add(i);
         }
         if (region) {
             classes.push("code-line--foldable");
@@ -104,21 +133,23 @@ export function renderFoldView(block: HTMLElement): void {
         if (foldedStart) {
             classes.push("code-line--folded");
         }
-        html += `<div class="${classes.join(" ")}" data-line="${i}">${lineHtmls[i] ?? escapeHtml(items[i])}</div>`;
-        if (i < items.length - 1) {
-            html += "\n";
-        }
+        // 行元素用行内 span，并让换行符留在元素内部：
+        // 1. 思源会给正文设置 white-space: pre-wrap，行间的换行文本节点会额外产生空行；
+        // 2. 行被隐藏时换行符一并隐藏，不会留下空行；
+        // 3. textContent 与原文完全一致，行号计算与聚焦还原都不受影响。
+        const newline = i < items.length - 1 || trailingNewline ? "\n" : "";
+        // 折叠提示符必须落在换行符之前，否则会跑到下一行
+        const marker = foldedStart ? `<span class="code-fold-marker"></span>` : "";
+        html += `<span class="${classes.join(" ")}" data-line="${i}">${lineHtmls[i] ?? escapeHtml(items[i])}${marker}${newline}</span>`;
         if (foldedStart && region) {
             hideUntil = region.end;
         }
-    }
-    if (trailingNewline) {
-        html += "\n";
     }
 
     codeEl.innerHTML = html;
     codeEl.classList.add("code-fold-lines");
     block.classList.add("code-block--folded");
+    syncLineNumbers(block, hiddenLines);
 }
 
 /** 还原块内折叠视图为原始可编辑高亮 HTML */
@@ -126,17 +157,18 @@ export function restoreFoldView(block: HTMLElement): void {
     const codeEl = getCodeEl(block);
     if (codeEl) {
         const state = originalMap.get(codeEl);
-        if (state !== undefined) {
+        if (hasRenderedLines(codeEl)) {
             // 若当前文本与渲染折叠视图前不一致，说明内容已被外部更新，
             // 此时不写回旧内容，避免覆盖新数据。
-            if (codeEl.textContent === state.text) {
+            if (state !== undefined && (codeEl.textContent ?? "") === state.text) {
                 codeEl.innerHTML = state.html;
             }
-            originalMap.delete(codeEl);
+            codeEl.classList.remove("code-fold-lines");
         }
-        codeEl.classList.remove("code-fold-lines");
+        originalMap.delete(codeEl);
     }
     block.classList.remove("code-block--folded");
+    syncLineNumbers(block, new Set<number>());
 }
 
 /** 还原并重新渲染折叠视图（折叠状态变化、展开整块时调用） */
