@@ -89,16 +89,49 @@ export function createThemeSelector(block: HTMLElement): HTMLElement {
     const close = (): void => {
         menu.classList.add("fn__none");
         document.removeEventListener("pointerdown", onDocPointerDown, true);
+        // 关闭时移回原容器，便于下次打开
+        if (menu.parentElement !== wrap) {
+            wrap.appendChild(menu);
+        }
+    };
+
+    // 菜单挂到 body 上并用 fixed 定位，避免被后续代码块（层叠上下文）覆盖
+    const positionMenu = (): void => {
+        const rect = trigger.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom - 8;
+        const placeAbove = spaceBelow < 160;
+        menu.style.position = "fixed";
+        menu.style.right = "auto";
+        menu.style.minWidth = `${rect.width}px`;
+        menu.style.zIndex = "100000";
+        if (placeAbove) {
+            menu.style.top = "auto";
+            menu.style.bottom = `${window.innerHeight - rect.top + 2}px`;
+            menu.style.maxHeight = `${Math.max(120, Math.min(320, rect.top - 8))}px`;
+        } else {
+            menu.style.bottom = "auto";
+            menu.style.top = `${rect.bottom + 2}px`;
+            menu.style.maxHeight = `${Math.max(120, Math.min(320, spaceBelow))}px`;
+        }
+        menu.style.left = `${rect.left}px`;
+        const width = menu.offsetWidth;
+        const maxLeft = Math.max(8, window.innerWidth - width - 8);
+        if (rect.left > maxLeft) {
+            menu.style.left = `${maxLeft}px`;
+        }
     };
 
     const open = (): void => {
         updateCurrent();
         menu.classList.remove("fn__none");
+        document.body.appendChild(menu);
+        positionMenu();
         document.addEventListener("pointerdown", onDocPointerDown, true);
     };
 
     const onDocPointerDown = (e: Event): void => {
-        if (!wrap.contains(e.target as Node)) {
+        const target = e.target as Node;
+        if (!wrap.contains(target) && !menu.contains(target)) {
             close();
         }
     };
