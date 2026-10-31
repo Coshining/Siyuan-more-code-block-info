@@ -100,6 +100,13 @@
         line-height: 22px;
         padding: 1px 6px;
         outline: none;
+        position: relative;
+        z-index: 5;
+        pointer-events: auto !important;
+        // 覆盖 .protyle-action 上继承的只读/不可选择样式，保证可正常输入
+        -webkit-user-modify: read-write !important;
+        user-select: text !important;
+        -webkit-user-select: text !important;
 
         &::placeholder {
             color: var(--b3-theme-on-background);

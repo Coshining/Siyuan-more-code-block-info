@@ -1,11 +1,7 @@
 import { ATTR_NAME, NAME_MAX_LENGTH } from "../constants";
 import { getI18n } from "../context";
 import { getBlockId, removeBlockAttr, setBlockAttr } from "../api";
-
-/** 仅阻止冒泡（不能 preventDefault，否则输入框无法聚焦） */
-function stopPropagation(e: Event): void {
-    e.stopPropagation();
-}
+import { getCommittedName, registerNameInput, setCommittedName } from "./nameIsolation";
 
 /** 创建代码块名称输入框，并绑定持久化 */
 export function createNameInput(block: HTMLElement): HTMLInputElement {
@@ -14,30 +10,27 @@ export function createNameInput(block: HTMLElement): HTMLInputElement {
     input.className = "code-block-name";
     input.placeholder = getI18n().namePlaceholder ?? "请输入代码块名称";
     input.maxLength = NAME_MAX_LENGTH;
+    input.readOnly = false;
+    input.disabled = false;
+    input.spellcheck = false;
+    input.autocomplete = "off";
     input.value = block.getAttribute(ATTR_NAME) ?? "";
-    let committed = input.value;
 
-    input.addEventListener("pointerdown", stopPropagation);
-    input.addEventListener("mousedown", stopPropagation);
-    input.addEventListener("click", stopPropagation);
-    input.addEventListener("dblclick", stopPropagation);
+    // 隔离思源编辑器层的指针/键盘事件，避免块收起后输入框被持续选中、无法编辑
+    registerNameInput(input, input.value);
 
-    input.addEventListener("keydown", (e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") {
-            input.blur();
-        } else if (e.key === "Escape") {
-            input.value = committed;
-            input.blur();
-        }
+    input.addEventListener("focus", () => {
+        input.readOnly = false;
+        input.disabled = false;
     });
 
     input.addEventListener("blur", () => {
         const value = input.value.trim();
+        const committed = getCommittedName(input);
         if (value === committed) {
             return;
         }
-        committed = value;
+        setCommittedName(input, value);
         const id = getBlockId(block);
         if (value) {
             block.setAttribute(ATTR_NAME, value);
