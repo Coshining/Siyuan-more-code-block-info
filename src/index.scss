@@ -23,6 +23,35 @@
             padding-left: 8px;
             margin-left: 4px;
         }
+
+        // 语言必须保持在 DOM 首位供思源读取，这里仅调整视觉顺序
+        > .code-block-collapse {
+            order: 0;
+        }
+
+        > .code-block-name {
+            order: 1;
+        }
+
+        > .fn__flex-1 {
+            order: 2;
+        }
+
+        > .protyle-action__language {
+            order: 3;
+        }
+
+        > .code-block-theme {
+            order: 4;
+        }
+
+        > .protyle-action__copy {
+            order: 5;
+        }
+
+        > .protyle-action__menu {
+            order: 6;
+        }
     }
 
     // 语言与原生图标常驻显示，不随鼠标移开而消失

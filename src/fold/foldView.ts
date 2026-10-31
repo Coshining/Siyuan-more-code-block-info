@@ -1,6 +1,7 @@
 import { FOLD_GUTTER_WIDTH } from "../constants";
 import { getBlockId } from "../api";
 import { computeFoldRegions } from "./regionParser";
+import { splitLinesFromHtml } from "./htmlLines";
 
 interface LineSplit {
     items: string[];
@@ -51,33 +52,6 @@ function escapeHtml(text: string): string {
         .replace(/"/g, "&quot;");
 }
 
-interface HljsLike {
-    getLanguage(name: string): unknown;
-    highlight(text: string, options: { language?: string; ignoreIllegals: boolean }): { value: string };
-}
-
-/** 获取思源加载的 highlight.js 实例（运行时由思源注入到 window） */
-function getHljsInstance(): HljsLike | undefined {
-    return (window as unknown as { hljs?: HljsLike }).hljs;
-}
-
-function highlightLine(line: string, lang: string): string {
-    const hljs = getHljsInstance();
-    if (hljs && lang && hljs.getLanguage(lang)) {
-        try {
-            return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value;
-        } catch {
-            // 回退为纯文本
-        }
-    }
-    return escapeHtml(line);
-}
-
-function getLanguage(block: HTMLElement): string {
-    const span = block.querySelector<HTMLElement>(".protyle-action__language");
-    return span?.textContent?.trim() ?? "";
-}
-
 /** 块内折叠视图是否处于激活状态 */
 export function isFoldViewActive(block: HTMLElement): boolean {
     const codeEl = getCodeEl(block);
@@ -105,11 +79,13 @@ export function renderFoldView(block: HTMLElement): void {
         return;
     }
     const folded = foldedMap.get(getBlockId(block)) ?? new Set<number>();
-    const lang = getLanguage(block);
 
     if (!originalMap.has(codeEl)) {
         originalMap.set(codeEl, { html: codeEl.innerHTML, text });
     }
+    const state = originalMap.get(codeEl)!;
+    // 复用思源原始高亮结果按行拆分，避免重新高亮导致样式丢失
+    const lineHtmls = splitLinesFromHtml(state.html);
 
     let html = "";
     let hideUntil = -1;
@@ -128,7 +104,7 @@ export function renderFoldView(block: HTMLElement): void {
         if (foldedStart) {
             classes.push("code-line--folded");
         }
-        html += `<div class="${classes.join(" ")}" data-line="${i}">${highlightLine(items[i], lang)}</div>`;
+        html += `<div class="${classes.join(" ")}" data-line="${i}">${lineHtmls[i] ?? escapeHtml(items[i])}</div>`;
         if (i < items.length - 1) {
             html += "\n";
         }

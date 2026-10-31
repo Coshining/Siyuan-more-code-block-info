@@ -19,8 +19,8 @@ export function injectCodeBlockHeader(block: HTMLElement): void {
     }
 
     const lang = action.querySelector<HTMLElement>(".protyle-action__language");
-    const spacer = action.querySelector<HTMLElement>(".fn__flex-1");
-    // 语言移动到右侧后不再位于首位，移除「first」样式避免圆角/间距异常
+    // 思源 highlightRender 依赖 .protyle-action 的第一个子元素的 textContent 读取语言，
+    // 因此必须让语言 span 保持在 DOM 首位，仅通过 CSS order 调整视觉顺序。
     lang?.classList.remove("protyle-action--first");
 
     applyCollapseState(block);
@@ -30,21 +30,10 @@ export function injectCodeBlockHeader(block: HTMLElement): void {
     const nameInput = createNameInput(block);
     const themeSelector = createThemeSelector(block);
 
-    if (spacer) {
-        spacer.before(collapseBtn, nameInput);
-        if (lang) {
-            spacer.after(lang);
-            lang.after(themeSelector);
-        } else {
-            spacer.after(themeSelector);
-        }
-    } else {
-        action.prepend(collapseBtn, nameInput);
-        if (lang) {
-            action.appendChild(lang);
-        }
-        action.appendChild(themeSelector);
-    }
+    // 追加到末尾，视觉顺序由 SCSS 的 order 控制
+    action.appendChild(collapseBtn);
+    action.appendChild(nameInput);
+    action.appendChild(themeSelector);
 
     block.setAttribute(MARKER, "1");
     ensureFoldListeners(block);
