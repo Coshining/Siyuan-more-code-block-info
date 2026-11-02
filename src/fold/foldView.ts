@@ -34,14 +34,10 @@ function getCodeEl(block: HTMLElement): HTMLElement | null {
 
 /**
  * 代码正文是否正在编辑。
- * 思源编辑时焦点可能在 wysiwyg 容器上而非代码元素本身，
- * 因此同时判断文档选区是否落在代码元素内，避免打字时被重新渲染打断光标。
+ * 只认焦点：思源在代码正文上设置了 contenteditable，聚焦时 activeElement 即代码元素。
+ * 不能用文档选区判断 —— 失焦后选区仍会停留在代码里，会导致折叠视图永远不渲染。
  */
 function isFocused(block: HTMLElement, codeEl: HTMLElement): boolean {
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0 && codeEl.contains(selection.anchorNode)) {
-        return true;
-    }
     return codeEl.contains(document.activeElement);
 }
 
