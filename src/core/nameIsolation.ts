@@ -37,17 +37,37 @@ function onKeyDown(e: KeyboardEvent): void {
     }
 }
 
+/** 需要拦在思源之前的指针 / 键盘事件 */
+const ISOLATED_EVENTS = [
+    "pointerdown",
+    "pointerup",
+    "mousedown",
+    "mouseup",
+    "click",
+    "selectstart",
+    "input",
+    "beforeinput",
+    "keydown",
+    "keyup",
+    "keypress",
+    "compositionstart",
+    "compositionupdate",
+    "compositionend",
+];
+
 function ensureInstalled(): void {
     if (installed) {
         return;
     }
     installed = true;
     // 捕获阶段拦截，早于思源在 document / 编辑器上的处理
-    window.addEventListener("pointerdown", stopIfNameInput, true);
-    window.addEventListener("mousedown", stopIfNameInput, true);
-    window.addEventListener("click", stopIfNameInput, true);
-    window.addEventListener("input", stopIfNameInput, true);
-    window.addEventListener("keydown", onKeyDown, true);
+    for (const type of ISOLATED_EVENTS) {
+        if (type === "keydown") {
+            window.addEventListener(type, onKeyDown, true);
+        } else {
+            window.addEventListener(type, stopIfNameInput, true);
+        }
+    }
 }
 
 /** 注册名称输入框及其初始提交值 */

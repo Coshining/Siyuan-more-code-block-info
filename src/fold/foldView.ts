@@ -32,7 +32,16 @@ function getCodeEl(block: HTMLElement): HTMLElement | null {
     return (hljs.lastElementChild as HTMLElement | null) ?? null;
 }
 
+/**
+ * 代码正文是否正在编辑。
+ * 思源编辑时焦点可能在 wysiwyg 容器上而非代码元素本身，
+ * 因此同时判断文档选区是否落在代码元素内，避免打字时被重新渲染打断光标。
+ */
 function isFocused(block: HTMLElement, codeEl: HTMLElement): boolean {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && codeEl.contains(selection.anchorNode)) {
+        return true;
+    }
     return codeEl.contains(document.activeElement);
 }
 
@@ -190,12 +199,36 @@ export function toggleFold(block: HTMLElement, startLine: number): void {
     refreshFoldView(block);
 }
 
+/** 把光标按屏幕坐标放回代码正文（还原折叠视图后浏览器会把光标丢到行首） */
+function placeCaretAtPoint(block: HTMLElement, x: number, y: number): void {
+    const codeEl = getCodeEl(block);
+    const selection = window.getSelection();
+    // 用户拖选时（选区非折叠）不要干扰
+    if (!codeEl || !selection || !selection.isCollapsed) {
+        return;
+    }
+    const range = document.caretRangeFromPoint?.(x, y) ?? null;
+    if (!range || !codeEl.contains(range.startContainer)) {
+        return;
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+/** 点击位置是否落在折叠箭头（gutter）区域 */
+function hitFoldGutter(e: MouseEvent, line: Element): boolean {
+    return e.clientX - line.getBoundingClientRect().left < FOLD_GUTTER_WIDTH;
+}
+
 /** 为块绑定聚焦还原 / 失焦渲染 / 折叠箭头点击事件 */
 export function ensureFoldListeners(block: HTMLElement): void {
     if (block.getAttribute("data-fold-bound") === "1") {
         return;
     }
     block.setAttribute("data-fold-bound", "1");
+
+    // 点击代码区域时记录坐标：还原原始 DOM 会破坏浏览器原来的光标定位
+    let caretPoint: { x: number; y: number } | null = null;
 
     block.addEventListener(
         "focusin",
@@ -219,6 +252,7 @@ export function ensureFoldListeners(block: HTMLElement): void {
     block.addEventListener(
         "mousedown",
         (e: MouseEvent) => {
+            caretPoint = null;
             if (!isFoldViewActive(block)) {
                 return;
             }
@@ -226,11 +260,25 @@ export function ensureFoldListeners(block: HTMLElement): void {
             if (!line) {
                 return;
             }
-            const rect = line.getBoundingClientRect();
-            if (e.clientX - rect.left < FOLD_GUTTER_WIDTH) {
+            if (hitFoldGutter(e, line)) {
                 e.preventDefault();
                 e.stopPropagation();
+                return;
             }
+            caretPoint = { x: e.clientX, y: e.clientY };
+        },
+        true,
+    );
+
+    block.addEventListener(
+        "mouseup",
+        () => {
+            if (!caretPoint) {
+                return;
+            }
+            const point = caretPoint;
+            caretPoint = null;
+            placeCaretAtPoint(block, point.x, point.y);
         },
         true,
     );
@@ -242,17 +290,14 @@ export function ensureFoldListeners(block: HTMLElement): void {
                 return;
             }
             const line = (e.target as HTMLElement).closest?.(".code-line");
-            if (!line) {
+            if (!line || !hitFoldGutter(e, line)) {
                 return;
             }
-            const rect = line.getBoundingClientRect();
-            if (e.clientX - rect.left < FOLD_GUTTER_WIDTH) {
-                e.preventDefault();
-                e.stopPropagation();
-                const index = Number(line.getAttribute("data-line"));
-                if (Number.isInteger(index)) {
-                    toggleFold(block, index);
-                }
+            e.preventDefault();
+            e.stopPropagation();
+            const index = Number(line.getAttribute("data-line"));
+            if (Number.isInteger(index)) {
+                toggleFold(block, index);
             }
         },
         true,

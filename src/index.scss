@@ -56,6 +56,11 @@
         }
     }
 
+    // 标题行与代码首行之间留出间距（.hljs 带行号容器，整块下移即可保持对齐）
+    > .hljs {
+        margin-top: 10px !important;
+    }
+
     // 语言与原生图标常驻显示，不随鼠标移开而消失
     .protyle-action__language,
     .protyle-action__copy,
