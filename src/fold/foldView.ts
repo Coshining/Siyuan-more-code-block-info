@@ -19,6 +19,9 @@ const originalMap = new WeakMap<HTMLElement, OriginalState>();
 const foldedMap = new Map<string, Set<number>>();
 /** 被折叠隐藏的行对应的行号标记类 */
 const LINE_NUMBER_HIDDEN = "code-fold-number--hidden";
+/** 是否有输入法组合输入进行中（此时任何 DOM 重写都会打断候选词） */
+let composing = false;
+let composingBound = false;
 
 function getHljs(block: HTMLElement): HTMLElement | null {
     return block.querySelector<HTMLElement>(":scope > .hljs");
@@ -34,11 +37,54 @@ function getCodeEl(block: HTMLElement): HTMLElement | null {
 
 /**
  * 代码正文是否正在编辑。
- * 只认焦点：思源在代码正文上设置了 contenteditable，聚焦时 activeElement 即代码元素。
- * 不能用文档选区判断 —— 失焦后选区仍会停留在代码里，会导致折叠视图永远不渲染。
+ * 思源编辑时焦点可能落在 wysiwyg 容器上而不在代码元素内，单看 activeElement 会漏判，
+ * 因此：焦点在代码内，或“选区仍在代码内且焦点在可编辑区域”都视为编辑中。
  */
-function isFocused(block: HTMLElement, codeEl: HTMLElement): boolean {
-    return codeEl.contains(document.activeElement);
+function isEditing(codeEl: HTMLElement): boolean {
+    const active = document.activeElement;
+    if (active && codeEl.contains(active)) {
+        return true;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !codeEl.contains(selection.anchorNode)) {
+        return false;
+    }
+    return active instanceof HTMLElement && active.isContentEditable;
+}
+
+/** 读取代码元素内的光标偏移（不在代码内时返回 null） */
+function getCaretOffset(codeEl: HTMLElement): number | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return null;
+    }
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed || !codeEl.contains(range.startContainer)) {
+        return null;
+    }
+    const before = document.createRange();
+    before.selectNodeContents(codeEl);
+    before.setEnd(range.startContainer, range.startOffset);
+    return before.toString().length;
+}
+
+/** 把光标放回指定文本偏移处，避免重渲染后光标跳到行首 */
+function setCaretOffset(codeEl: HTMLElement, offset: number): void {
+    const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
+    let remaining = offset;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const length = node.nodeValue?.length ?? 0;
+        if (remaining <= length) {
+            const range = document.createRange();
+            range.setStart(node, remaining);
+            range.collapse(true);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            return;
+        }
+        remaining -= length;
+    }
 }
 
 function splitLines(text: string): LineSplit {
@@ -101,7 +147,7 @@ export function renderFoldView(block: HTMLElement): void {
         return;
     }
     const codeEl = getCodeEl(block);
-    if (!codeEl || hasRenderedLines(codeEl) || isFocused(block, codeEl)) {
+    if (!codeEl || composing || hasRenderedLines(codeEl) || isEditing(codeEl)) {
         return;
     }
 
@@ -151,10 +197,15 @@ export function renderFoldView(block: HTMLElement): void {
         }
     }
 
+    // 重渲染会重建文本节点，先记下光标再恢复，避免输入时被弹到行首
+    const caretOffset = getCaretOffset(codeEl);
     codeEl.innerHTML = html;
     codeEl.classList.add("code-fold-lines");
     block.classList.add("code-block--folded");
     syncLineNumbers(block, hiddenLines);
+    if (caretOffset !== null) {
+        setCaretOffset(codeEl, caretOffset);
+    }
 }
 
 /** 还原块内折叠视图为原始可编辑高亮 HTML */
@@ -218,6 +269,15 @@ function hitFoldGutter(e: MouseEvent, line: Element): boolean {
 
 /** 为块绑定聚焦还原 / 失焦渲染 / 折叠箭头点击事件 */
 export function ensureFoldListeners(block: HTMLElement): void {
+    if (!composingBound) {
+        composingBound = true;
+        window.addEventListener("compositionstart", () => {
+            composing = true;
+        }, true);
+        window.addEventListener("compositionend", () => {
+            composing = false;
+        }, true);
+    }
     if (block.getAttribute("data-fold-bound") === "1") {
         return;
     }
