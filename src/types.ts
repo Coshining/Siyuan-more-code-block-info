@@ -12,17 +12,6 @@ export interface PluginConfig {
     defaultTheme: string;
 }
 
-/** 块内折叠区间（行号为 0 起始） */
-export interface FoldRegion {
-    /** 区间起始行（保持可见的标题行） */
-    start: number;
-    /** 区间结束行（含），start 之后到 end 的行可被折叠隐藏 */
-    end: number;
-    /** 标题行缩进层级 */
-    depth: number;
-    kind: "brace" | "indent";
-}
-
 /** 供运行时上下文使用的插件最小接口 */
 export interface PluginRuntime {
     name: string;

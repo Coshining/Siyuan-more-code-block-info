@@ -1,6 +1,6 @@
 # Siyuan More Code Block Info
 
-A [SiYuan](https://b3log.org/siyuan) plugin that enriches the code block header and adds folding.
+A [SiYuan](https://b3log.org/siyuan) plugin that enriches the code block header.
 
 ## Features
 
@@ -9,7 +9,6 @@ A [SiYuan](https://b3log.org/siyuan) plugin that enriches the code block header 
 - **Highlight theme**: choose a theme per block, with a global default theme in settings.
 - **Copy / More**: original buttons are preserved.
 - **Collapse whole block**: show only the header, persisted per block.
-- **In-block folding**: fold code regions by braces / indentation like VS Code (folding applies when not editing; click into the code to edit).
 
 ## Install
 

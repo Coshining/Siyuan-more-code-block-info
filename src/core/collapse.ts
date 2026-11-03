@@ -1,7 +1,6 @@
 import { ATTR_FOLD } from "../constants";
 import { getI18n } from "../context";
 import { getBlockId, setBlockAttr } from "../api";
-import { refreshFoldView } from "../fold/foldView";
 
 /** 阻止事件冒泡 */
 function stop(e: Event): void {
@@ -44,7 +43,6 @@ export function createCollapseButton(block: HTMLElement): HTMLElement {
         block.setAttribute(ATTR_FOLD, next);
         setBlockAttr(getBlockId(block), ATTR_FOLD, next);
         render();
-        refreshFoldView(block);
     });
 
     return btn;

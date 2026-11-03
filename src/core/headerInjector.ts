@@ -2,7 +2,6 @@ import { MARKER } from "../constants";
 import { applyThemeToBlock, createThemeSelector } from "./themeSelector";
 import { createNameInput } from "./nameInput";
 import { applyCollapseState, createCollapseButton } from "./collapse";
-import { ensureFoldListeners, renderFoldView } from "../fold/foldView";
 
 /**
  * 对代码块标题栏注入自定义头部并重排：
@@ -36,6 +35,4 @@ export function injectCodeBlockHeader(block: HTMLElement): void {
     action.appendChild(themeSelector);
 
     block.setAttribute(MARKER, "1");
-    ensureFoldListeners(block);
-    renderFoldView(block);
 }
