@@ -1,20 +1,18 @@
 import { FOLD_GUTTER_WIDTH } from "../constants";
-import type { FoldRegion } from "../types";
 import { getBlockId } from "../api";
 import { computeFoldRegions } from "./regionParser";
 import { splitLinesFromHtml } from "./htmlLines";
 import { getCaretOffset, setCaretOffset } from "./foldCaret";
 import { syncLineNumbers } from "./lineNumbers";
-
-interface LineSplit {
-    items: string[];
-    trailingNewline: boolean;
-}
+import { collectRenderedLineHtmls, escapeHtml, splitLines } from "./foldLines";
+import { buildSignature, remapFolded } from "./foldState";
 
 /** 按块 ID 记录的折叠状态（起始行集合），跨重渲染保留 */
 const foldedMap = new Map<string, Set<number>>();
 /** 代码元素当前渲染对应的结构签名，结构未变就不重建 DOM */
 const renderedMap = new WeakMap<HTMLElement, string>();
+/** 代码元素上一次渲染的文本行，用于重映射折叠状态 */
+const prevItemsMap = new WeakMap<HTMLElement, string[]>();
 /** 行结构变化后同步折叠视图的延迟（ms） */
 const SYNC_DELAY = 180;
 /** 是否有输入法组合输入进行中（此时任何 DOM 重写都会打断候选词） */
@@ -33,52 +31,21 @@ function getCodeEl(block: HTMLElement): HTMLElement | null {
     return (hljs.lastElementChild as HTMLElement | null) ?? null;
 }
 
-function splitLines(text: string): LineSplit {
-    const items = text.split("\n");
-    let trailingNewline = false;
-    if (items.length > 0 && items[items.length - 1] === "") {
-        trailingNewline = true;
-        items.pop();
-    }
-    return { items, trailingNewline };
-}
-
-function escapeHtml(text: string): string {
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-}
-
 /** 代码元素内是否已经渲染过折叠行 */
 function hasRenderedLines(codeEl: HTMLElement): boolean {
     return codeEl.querySelector(":scope > .code-line") !== null;
 }
 
-/** 取出单个代码行元素的高亮 HTML（去掉行尾换行与折叠提示符） */
-function lineHtmlOf(line: HTMLElement): string {
-    const clone = line.cloneNode(true) as HTMLElement;
-    clone.querySelector(".code-fold-marker")?.remove();
-    const last = clone.lastChild;
-    if (last && last.nodeType === Node.TEXT_NODE && (last.nodeValue ?? "").endsWith("\n")) {
-        last.nodeValue = (last.nodeValue ?? "").slice(0, -1);
-    }
-    return clone.innerHTML;
-}
-
-/** 已渲染状态下，从行元素里取回每行的高亮 HTML */
-function collectRenderedLineHtmls(codeEl: HTMLElement): string[] {
-    return Array.from(codeEl.children).map((child) => lineHtmlOf(child as HTMLElement));
-}
-
-/** 结构签名：行数 + 可折叠区间 + 折叠状态；结构未变就不重建 DOM */
-function buildSignature(lineCount: number, regions: Map<number, FoldRegion>, folded: Set<number>): string {
-    const parts: string[] = [String(lineCount)];
-    regions.forEach((region, start) => {
-        parts.push(`${start}-${region.end}${folded.has(start) ? "*" : ""}`);
-    });
-    return parts.join("|");
+/** 重建后恢复光标；思源随后可能重置选区，这里再兜底补两次 */
+function restoreCaret(codeEl: HTMLElement, offset: number): void {
+    setCaretOffset(codeEl, offset);
+    const retry = (): void => {
+        if (getCaretOffset(codeEl) === 0 && offset > 0) {
+            setCaretOffset(codeEl, offset);
+        }
+    };
+    requestAnimationFrame(retry);
+    window.setTimeout(retry, 80);
 }
 
 /** 块内折叠视图是否处于激活状态 */
@@ -108,7 +75,14 @@ export function renderFoldView(block: HTMLElement, force = false): void {
     const text = codeEl.textContent ?? "";
     const { items, trailingNewline } = splitLines(text);
     const regions = computeFoldRegions(items);
-    const folded = foldedMap.get(getBlockId(block)) ?? new Set<number>();
+    const blockId = getBlockId(block);
+    const prevItems = prevItemsMap.get(codeEl) ?? items;
+    const folded = remapFolded(foldedMap.get(blockId) ?? new Set<number>(), prevItems, items);
+    if (folded.size > 0) {
+        foldedMap.set(blockId, folded);
+    } else {
+        foldedMap.delete(blockId);
+    }
     const rendered = hasRenderedLines(codeEl);
 
     // 已经没有可折叠区间：把行元素还原成普通高亮 HTML
@@ -125,7 +99,9 @@ export function renderFoldView(block: HTMLElement, force = false): void {
     }
 
     // 已渲染时从行元素里取每行高亮 HTML，否则从思源原始高亮 HTML 拆行
-    const lineHtmls = rendered ? collectRenderedLineHtmls(codeEl) : splitLinesFromHtml(codeEl.innerHTML);
+    const lineHtmls = rendered
+        ? collectRenderedLineHtmls(codeEl, trailingNewline)
+        : splitLinesFromHtml(codeEl.innerHTML);
     const caretOffset = getCaretOffset(codeEl);
 
     let html = "";
@@ -165,18 +141,20 @@ export function renderFoldView(block: HTMLElement, force = false): void {
     codeEl.classList.add("code-fold-lines");
     block.classList.add("code-block--folded");
     renderedMap.set(codeEl, signature);
+    prevItemsMap.set(codeEl, items);
     syncLineNumbers(hljs, hiddenLines);
     if (caretOffset !== null) {
-        setCaretOffset(codeEl, caretOffset);
+        restoreCaret(codeEl, caretOffset);
     }
 }
 
 /** 取消行元素包装，还原为普通高亮 HTML */
 function unfoldLines(block: HTMLElement, codeEl: HTMLElement, trailingNewline: boolean): void {
     const caretOffset = getCaretOffset(codeEl);
-    codeEl.innerHTML = collectRenderedLineHtmls(codeEl).join("\n") + (trailingNewline ? "\n" : "");
+    codeEl.innerHTML = collectRenderedLineHtmls(codeEl, trailingNewline).join("\n") + (trailingNewline ? "\n" : "");
     codeEl.classList.remove("code-fold-lines");
     renderedMap.delete(codeEl);
+    prevItemsMap.delete(codeEl);
     block.classList.remove("code-block--folded");
     syncLineNumbers(getHljs(block), new Set<number>());
     if (caretOffset !== null) {
