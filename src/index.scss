@@ -221,8 +221,20 @@
     min-height: 40px !important;
     overflow: visible !important;
 
-    > .hljs,
     > .protyle-attr {
         display: none !important;
+    }
+
+    // 代码正文不能用 display: none 隐藏。
+    // 思源渲染行号时会先把行号栏内容设为最大行号，再用
+    // .protyle-linenumber__rows 的 clientWidth 计算代码的 padding-left；
+    // 收起状态下若拿不到布局，量出的宽度就是 0，padding-left 退化为 16px，
+    // 之后展开时行号便会压到代码文字上（窗口缩放、重新高亮等时机都会触发）。
+    // 因此改为脱离文档流 + visibility 隐藏：块高度照样塌陷，但尺寸仍可测量。
+    > .hljs {
+        position: absolute !important;
+        inset-inline: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
     }
 }
