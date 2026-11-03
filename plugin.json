@@ -1,37 +1,12 @@
 {
   "name": "siyuan-more-code-block-info",
   "author": "Co-shining",
-  "url": "https://github.com/Co-shining/Siyuan-more-code-block-info",
+  "url": "https://github.com/Coshining/Siyuan-more-code-block-info",
   "version": "0.1.5",
   "minAppVersion": "3.8.5",
-  "kernels": [
-    "windows",
-    "linux",
-    "darwin",
-    "ios",
-    "android",
-    "harmony",
-    "docker",
-    "all"
-  ],
-  "backends": [
-    "windows",
-    "linux",
-    "darwin",
-    "ios",
-    "android",
-    "harmony",
-    "docker",
-    "all"
-  ],
-  "frontends": [
-    "desktop",
-    "mobile",
-    "browser-desktop",
-    "browser-mobile",
-    "desktop-window",
-    "all"
-  ],
+  "backends": ["all"],
+  "frontends": ["all"],
+  "kernels": ["all"],
   "disabledInPublish": true,
   "displayName": {
     "default": "Code Block More Info",
@@ -47,12 +22,6 @@
   },
   "icon": "icon.png",
   "preview": "preview.png",
-  "funding": {
-    "openCollective": "",
-    "patreon": "",
-    "github": "",
-    "custom": []
-  },
   "keywords": [
     "代码块",
     "code block",
