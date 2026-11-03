@@ -2,7 +2,7 @@
   "name": "siyuan-more-code-block-info",
   "author": "Co-shining",
   "url": "https://github.com/Coshining/Siyuan-more-code-block-info",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minAppVersion": "3.8.5",
   "backends": ["all"],
   "frontends": ["all"],
