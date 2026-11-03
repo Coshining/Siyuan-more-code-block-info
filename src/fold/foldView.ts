@@ -210,7 +210,10 @@ export function ensureFoldListeners(block: HTMLElement): void {
     block.addEventListener("input", syncIfInCode, true);
     block.addEventListener("keyup", syncIfInCode, true);
     block.addEventListener("focusout", scheduleSync, true);
-    installEditGuard(block, () => getCodeEl(block));
+    installEditGuard(block, {
+        getCodeEl: () => getCodeEl(block),
+        unfoldAt: (startLine) => toggleFold(block, startLine),
+    });
 
     block.addEventListener(
         "mousedown",

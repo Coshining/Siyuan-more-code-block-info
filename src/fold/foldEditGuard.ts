@@ -3,8 +3,16 @@
  *
  * 被折叠的行是 `display: none`，但仍留在 DOM 里。把光标放到折叠区后一行并在行首退格时，
  * 浏览器会向前跨过隐藏行去合并文本，结果把折叠内容删掉。
- * 这里在折叠边界上拦截 Backspace / Delete，避免编辑穿透到不可见的行。
+ * 这里在折叠边界上拦截 Backspace / Delete：第一次先展开对应的折叠区，
+ * 再按一次才真正执行合并，既不丢内容也不会让人无从下手。
  */
+
+export interface EditGuardHandlers {
+    /** 取代码正文元素 */
+    getCodeEl: () => HTMLElement | null;
+    /** 展开以指定行开头的折叠区 */
+    unfoldAt: (startLine: number) => void;
+}
 
 /** 光标所在的行元素（选区需落在代码内且为行内 `.code-line`） */
 function caretLine(codeEl: HTMLElement): HTMLElement | null {
@@ -46,15 +54,31 @@ function isHiddenLine(node: Element | null | undefined): boolean {
     return !!node && node.classList.contains("code-line--hidden");
 }
 
+/** 从隐藏行向前找到所属折叠区间的起始行号 */
+function findFoldStart(hiddenLine: Element): number | null {
+    let node: Element | null = hiddenLine.previousElementSibling;
+    while (node) {
+        if (node.classList.contains("code-line--folded")) {
+            const index = Number((node as HTMLElement).getAttribute("data-line"));
+            return Number.isInteger(index) ? index : null;
+        }
+        if (node.classList.contains("code-line") && !node.classList.contains("code-line--hidden")) {
+            return null;
+        }
+        node = node.previousElementSibling;
+    }
+    return null;
+}
+
 /** 安装折叠边界拦截（每个块一次） */
-export function installEditGuard(block: HTMLElement, getCodeEl: () => HTMLElement | null): void {
+export function installEditGuard(block: HTMLElement, handlers: EditGuardHandlers): void {
     block.addEventListener(
         "keydown",
         (e: KeyboardEvent) => {
             if (e.key !== "Backspace" && e.key !== "Delete") {
                 return;
             }
-            const codeEl = getCodeEl();
+            const codeEl = handlers.getCodeEl();
             if (!codeEl) {
                 return;
             }
@@ -66,14 +90,20 @@ export function installEditGuard(block: HTMLElement, getCodeEl: () => HTMLElemen
             if (offset < 0) {
                 return;
             }
-            const blocked =
+            const neighbor =
                 e.key === "Backspace"
-                    ? offset === 0 && isHiddenLine(line.previousElementSibling)
-                    : offset === lineLength(line) && isHiddenLine(line.nextElementSibling);
-            if (blocked) {
-                e.preventDefault();
-                e.stopPropagation();
+                    ? (offset === 0 ? line.previousElementSibling : null)
+                    : (offset === lineLength(line) ? line.nextElementSibling : null);
+            if (!isHiddenLine(neighbor)) {
+                return;
             }
+            // 先展开被折叠的区域，再按一次才会合并
+            const startLine = findFoldStart(neighbor as Element);
+            if (startLine !== null) {
+                handlers.unfoldAt(startLine);
+            }
+            e.preventDefault();
+            e.stopPropagation();
         },
         true,
     );
