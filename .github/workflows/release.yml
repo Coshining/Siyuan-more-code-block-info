@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Check tag matches manifest version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION="$(node -p "require('./plugin.json').version")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG_VERSION manifest=$MANIFEST_VERSION package=$PACKAGE_VERSION"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match plugin.json version $MANIFEST_VERSION"
+            exit 1
+          fi
+          if [ "$PACKAGE_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::package.json version $PACKAGE_VERSION does not match plugin.json version $MANIFEST_VERSION"
+            exit 1
+          fi
+
+      - name: Validate manifest
+        run: |
+          node -e '
+            const p = require("./plugin.json");
+            for (const key of ["backends", "frontends", "kernels"]) {
+              const value = p[key] || [];
+              if (value.includes("all") && value.length > 1) {
+                throw new Error(`${key} must not mix "all" with other values`);
+              }
+            }
+            if (p.version.startsWith("v") || p.version.startsWith("V")) {
+              throw new Error("version must not start with v");
+            }
+            if (!p.readme || !p.readme.default) {
+              throw new Error("readme.default is required");
+            }
+          '
+
+      - name: Build package
+        run: bash scripts/build.sh
+
+      - name: Verify package
+        run: |
+          set -euo pipefail
+          unzip -l package.zip
+          for file in README.md plugin.json index.js index.css icon.png preview.png; do
+            unzip -Z1 package.zip "$file" > /dev/null
+          done
+          for file in README.md README.zh-CN.md; do
+            unzip -Z1 package.zip "$file" > /dev/null
+          done
+          test "$(stat -c%s icon.png)" -le 65536
+          test "$(stat -c%s preview.png)" -le 524288
+          if unzip -Z1 package.zip | grep -q '\\'; then
+            echo "::error::package.zip contains backslash paths"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: package.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
