@@ -6,6 +6,7 @@ import { getCaretOffset, setCaretOffset } from "./foldCaret";
 import { syncLineNumbers } from "./lineNumbers";
 import { collectRenderedLineHtmls, escapeHtml, splitLines } from "./foldLines";
 import { buildSignature, remapFolded } from "./foldState";
+import { installEditGuard } from "./foldEditGuard";
 
 /** 按块 ID 记录的折叠状态（起始行集合），跨重渲染保留 */
 const foldedMap = new Map<string, Set<number>>();
@@ -209,6 +210,7 @@ export function ensureFoldListeners(block: HTMLElement): void {
     block.addEventListener("input", syncIfInCode, true);
     block.addEventListener("keyup", syncIfInCode, true);
     block.addEventListener("focusout", scheduleSync, true);
+    installEditGuard(block, () => getCodeEl(block));
 
     block.addEventListener(
         "mousedown",
