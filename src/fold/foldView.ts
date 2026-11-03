@@ -1,24 +1,22 @@
 import { FOLD_GUTTER_WIDTH } from "../constants";
+import type { FoldRegion } from "../types";
 import { getBlockId } from "../api";
 import { computeFoldRegions } from "./regionParser";
 import { splitLinesFromHtml } from "./htmlLines";
+import { getCaretOffset, setCaretOffset } from "./foldCaret";
+import { syncLineNumbers } from "./lineNumbers";
 
 interface LineSplit {
     items: string[];
     trailingNewline: boolean;
 }
 
-interface OriginalState {
-    html: string;
-    text: string;
-}
-
-/** 每个代码元素（.hljs 最后一个子元素）对应的原始高亮 HTML 与文本 */
-const originalMap = new WeakMap<HTMLElement, OriginalState>();
 /** 按块 ID 记录的折叠状态（起始行集合），跨重渲染保留 */
 const foldedMap = new Map<string, Set<number>>();
-/** 被折叠隐藏的行对应的行号标记类 */
-const LINE_NUMBER_HIDDEN = "code-fold-number--hidden";
+/** 代码元素当前渲染对应的结构签名，结构未变就不重建 DOM */
+const renderedMap = new WeakMap<HTMLElement, string>();
+/** 行结构变化后同步折叠视图的延迟（ms） */
+const SYNC_DELAY = 180;
 /** 是否有输入法组合输入进行中（此时任何 DOM 重写都会打断候选词） */
 let composing = false;
 let composingBound = false;
@@ -33,58 +31,6 @@ function getCodeEl(block: HTMLElement): HTMLElement | null {
         return null;
     }
     return (hljs.lastElementChild as HTMLElement | null) ?? null;
-}
-
-/**
- * 代码正文是否正在编辑。
- * 思源编辑时焦点可能落在 wysiwyg 容器上而不在代码元素内，单看 activeElement 会漏判，
- * 因此：焦点在代码内，或“选区仍在代码内且焦点在可编辑区域”都视为编辑中。
- */
-function isEditing(codeEl: HTMLElement): boolean {
-    const active = document.activeElement;
-    if (active && codeEl.contains(active)) {
-        return true;
-    }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !codeEl.contains(selection.anchorNode)) {
-        return false;
-    }
-    return active instanceof HTMLElement && active.isContentEditable;
-}
-
-/** 读取代码元素内的光标偏移（不在代码内时返回 null） */
-function getCaretOffset(codeEl: HTMLElement): number | null {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-        return null;
-    }
-    const range = selection.getRangeAt(0);
-    if (!range.collapsed || !codeEl.contains(range.startContainer)) {
-        return null;
-    }
-    const before = document.createRange();
-    before.selectNodeContents(codeEl);
-    before.setEnd(range.startContainer, range.startOffset);
-    return before.toString().length;
-}
-
-/** 把光标放回指定文本偏移处，避免重渲染后光标跳到行首 */
-function setCaretOffset(codeEl: HTMLElement, offset: number): void {
-    const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
-    let remaining = offset;
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const length = node.nodeValue?.length ?? 0;
-        if (remaining <= length) {
-            const range = document.createRange();
-            range.setStart(node, remaining);
-            range.collapse(true);
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
-            selection?.addRange(range);
-            return;
-        }
-        remaining -= length;
-    }
 }
 
 function splitLines(text: string): LineSplit {
@@ -110,25 +56,29 @@ function hasRenderedLines(codeEl: HTMLElement): boolean {
     return codeEl.querySelector(":scope > .code-line") !== null;
 }
 
-/** 思源行号容器（.hljs 的第一个子元素），未开启行号时返回 null */
-function getLineNumberRows(block: HTMLElement): HTMLElement | null {
-    const rows = getHljs(block)?.firstElementChild as HTMLElement | null | undefined;
-    if (!rows || !rows.classList.contains("protyle-linenumber__rows")) {
-        return null;
+/** 取出单个代码行元素的高亮 HTML（去掉行尾换行与折叠提示符） */
+function lineHtmlOf(line: HTMLElement): string {
+    const clone = line.cloneNode(true) as HTMLElement;
+    clone.querySelector(".code-fold-marker")?.remove();
+    const last = clone.lastChild;
+    if (last && last.nodeType === Node.TEXT_NODE && (last.nodeValue ?? "").endsWith("\n")) {
+        last.nodeValue = (last.nodeValue ?? "").slice(0, -1);
     }
-    return rows;
+    return clone.innerHTML;
 }
 
-/** 同步行号：隐藏被折叠行对应的行号，避免行号与代码行错位 */
-function syncLineNumbers(block: HTMLElement, hiddenLines: Set<number>): void {
-    const rows = getLineNumberRows(block);
-    if (!rows) {
-        return;
-    }
-    const children = rows.children;
-    for (let i = 0; i < children.length; i++) {
-        children[i].classList.toggle(LINE_NUMBER_HIDDEN, hiddenLines.has(i));
-    }
+/** 已渲染状态下，从行元素里取回每行的高亮 HTML */
+function collectRenderedLineHtmls(codeEl: HTMLElement): string[] {
+    return Array.from(codeEl.children).map((child) => lineHtmlOf(child as HTMLElement));
+}
+
+/** 结构签名：行数 + 可折叠区间 + 折叠状态；结构未变就不重建 DOM */
+function buildSignature(lineCount: number, regions: Map<number, FoldRegion>, folded: Set<number>): string {
+    const parts: string[] = [String(lineCount)];
+    regions.forEach((region, start) => {
+        parts.push(`${start}-${region.end}${folded.has(start) ? "*" : ""}`);
+    });
+    return parts.join("|");
 }
 
 /** 块内折叠视图是否处于激活状态 */
@@ -137,8 +87,12 @@ export function isFoldViewActive(block: HTMLElement): boolean {
     return !!codeEl && codeEl.classList.contains("code-fold-lines") && hasRenderedLines(codeEl);
 }
 
-/** 渲染块内折叠视图（仅在非聚焦且高亮完成后） */
-export function renderFoldView(block: HTMLElement): void {
+/**
+ * 渲染 / 实时更新块内折叠视图。
+ * 编辑过程中也会更新：结构签名（行数 + 折叠区间 + 折叠状态）未变时不重建 DOM，
+ * 需要重建时先记下光标、重建后再恢复，避免打断正在进行的输入。
+ */
+export function renderFoldView(block: HTMLElement, force = false): void {
     if (block.getAttribute("data-fold") === "true") {
         return;
     }
@@ -147,23 +101,32 @@ export function renderFoldView(block: HTMLElement): void {
         return;
     }
     const codeEl = getCodeEl(block);
-    if (!codeEl || composing || hasRenderedLines(codeEl) || isEditing(codeEl)) {
+    if (!codeEl || composing) {
         return;
     }
 
     const text = codeEl.textContent ?? "";
     const { items, trailingNewline } = splitLines(text);
     const regions = computeFoldRegions(items);
+    const folded = foldedMap.get(getBlockId(block)) ?? new Set<number>();
+    const rendered = hasRenderedLines(codeEl);
+
+    // 已经没有可折叠区间：把行元素还原成普通高亮 HTML
     if (regions.size === 0) {
+        if (rendered) {
+            unfoldLines(block, codeEl, trailingNewline);
+        }
         return;
     }
-    const folded = foldedMap.get(getBlockId(block)) ?? new Set<number>();
 
-    // 每次都从思源的原始 DOM 重新捕获，避免把折叠视图自身的行元素当成原始内容
-    const state: OriginalState = { html: codeEl.innerHTML, text };
-    originalMap.set(codeEl, state);
-    // 复用思源原始高亮结果按行拆分，避免重新高亮导致样式丢失
-    const lineHtmls = splitLinesFromHtml(state.html);
+    const signature = buildSignature(items.length, regions, folded);
+    if (!force && rendered && renderedMap.get(codeEl) === signature) {
+        return;
+    }
+
+    // 已渲染时从行元素里取每行高亮 HTML，否则从思源原始高亮 HTML 拆行
+    const lineHtmls = rendered ? collectRenderedLineHtmls(codeEl) : splitLinesFromHtml(codeEl.innerHTML);
+    const caretOffset = getCaretOffset(codeEl);
 
     let html = "";
     let hideUntil = -1;
@@ -197,40 +160,33 @@ export function renderFoldView(block: HTMLElement): void {
         }
     }
 
-    // 重渲染会重建文本节点，先记下光标再恢复，避免输入时被弹到行首
-    const caretOffset = getCaretOffset(codeEl);
+    // 重渲染会重建文本节点，重建前已记下光标偏移，这里恢复回去
     codeEl.innerHTML = html;
     codeEl.classList.add("code-fold-lines");
     block.classList.add("code-block--folded");
-    syncLineNumbers(block, hiddenLines);
+    renderedMap.set(codeEl, signature);
+    syncLineNumbers(hljs, hiddenLines);
     if (caretOffset !== null) {
         setCaretOffset(codeEl, caretOffset);
     }
 }
 
-/** 还原块内折叠视图为原始可编辑高亮 HTML */
-export function restoreFoldView(block: HTMLElement): void {
-    const codeEl = getCodeEl(block);
-    if (codeEl) {
-        const state = originalMap.get(codeEl);
-        if (hasRenderedLines(codeEl)) {
-            // 若当前文本与渲染折叠视图前不一致，说明内容已被外部更新，
-            // 此时不写回旧内容，避免覆盖新数据。
-            if (state !== undefined && (codeEl.textContent ?? "") === state.text) {
-                codeEl.innerHTML = state.html;
-            }
-            codeEl.classList.remove("code-fold-lines");
-        }
-        originalMap.delete(codeEl);
-    }
+/** 取消行元素包装，还原为普通高亮 HTML */
+function unfoldLines(block: HTMLElement, codeEl: HTMLElement, trailingNewline: boolean): void {
+    const caretOffset = getCaretOffset(codeEl);
+    codeEl.innerHTML = collectRenderedLineHtmls(codeEl).join("\n") + (trailingNewline ? "\n" : "");
+    codeEl.classList.remove("code-fold-lines");
+    renderedMap.delete(codeEl);
     block.classList.remove("code-block--folded");
-    syncLineNumbers(block, new Set<number>());
+    syncLineNumbers(getHljs(block), new Set<number>());
+    if (caretOffset !== null) {
+        setCaretOffset(codeEl, caretOffset);
+    }
 }
 
-/** 还原并重新渲染折叠视图（折叠状态变化、展开整块时调用） */
+/** 强制重渲染（整块收起 / 展开时调用） */
 export function refreshFoldView(block: HTMLElement): void {
-    restoreFoldView(block);
-    renderFoldView(block);
+    renderFoldView(block, true);
 }
 
 /** 切换某起始行的折叠状态 */
@@ -243,23 +199,7 @@ export function toggleFold(block: HTMLElement, startLine: number): void {
         set.add(startLine);
     }
     foldedMap.set(id, set);
-    refreshFoldView(block);
-}
-
-/** 把光标按屏幕坐标放回代码正文（还原折叠视图后浏览器会把光标丢到行首） */
-function placeCaretAtPoint(block: HTMLElement, x: number, y: number): void {
-    const codeEl = getCodeEl(block);
-    const selection = window.getSelection();
-    // 用户拖选时（选区非折叠）不要干扰
-    if (!codeEl || !selection || !selection.isCollapsed) {
-        return;
-    }
-    const range = document.caretRangeFromPoint?.(x, y) ?? null;
-    if (!range || !codeEl.contains(range.startContainer)) {
-        return;
-    }
-    selection.removeAllRanges();
-    selection.addRange(range);
+    renderFoldView(block, true);
 }
 
 /** 点击位置是否落在折叠箭头（gutter）区域 */
@@ -267,74 +207,43 @@ function hitFoldGutter(e: MouseEvent, line: Element): boolean {
     return e.clientX - line.getBoundingClientRect().left < FOLD_GUTTER_WIDTH;
 }
 
-/** 为块绑定聚焦还原 / 失焦渲染 / 折叠箭头点击事件 */
+/** 为块绑定实时同步与折叠箭头点击事件 */
 export function ensureFoldListeners(block: HTMLElement): void {
-    if (!composingBound) {
-        composingBound = true;
-        window.addEventListener("compositionstart", () => {
-            composing = true;
-        }, true);
-        window.addEventListener("compositionend", () => {
-            composing = false;
-        }, true);
-    }
+    bindCompositionTracking();
     if (block.getAttribute("data-fold-bound") === "1") {
         return;
     }
     block.setAttribute("data-fold-bound", "1");
 
-    // 点击代码区域时记录坐标：还原原始 DOM 会破坏浏览器原来的光标定位
-    let caretPoint: { x: number; y: number } | null = null;
+    let syncTimer = 0;
+    const scheduleSync = (): void => {
+        window.clearTimeout(syncTimer);
+        syncTimer = window.setTimeout(() => renderFoldView(block), SYNC_DELAY);
+    };
 
-    block.addEventListener(
-        "focusin",
-        (e: FocusEvent) => {
-            const codeEl = getCodeEl(block);
-            if (codeEl && codeEl.contains(e.target as Node)) {
-                restoreFoldView(block);
-            }
-        },
-        true,
-    );
-
-    block.addEventListener(
-        "focusout",
-        () => {
-            requestAnimationFrame(() => renderFoldView(block));
-        },
-        true,
-    );
+    // 编辑时行结构（换行、缩进）变化后实时刷新折叠按钮
+    const syncIfInCode = (e: Event): void => {
+        const codeEl = getCodeEl(block);
+        if (codeEl && e.target instanceof Node && codeEl.contains(e.target)) {
+            scheduleSync();
+        }
+    };
+    block.addEventListener("input", syncIfInCode, true);
+    block.addEventListener("keyup", syncIfInCode, true);
+    block.addEventListener("focusout", scheduleSync, true);
 
     block.addEventListener(
         "mousedown",
         (e: MouseEvent) => {
-            caretPoint = null;
             if (!isFoldViewActive(block)) {
                 return;
             }
             const line = (e.target as HTMLElement).closest?.(".code-line");
-            if (!line) {
-                return;
-            }
-            if (hitFoldGutter(e, line)) {
+            if (line && hitFoldGutter(e, line)) {
+                // 不把光标放进代码，避免点箭头时触发编辑
                 e.preventDefault();
                 e.stopPropagation();
-                return;
             }
-            caretPoint = { x: e.clientX, y: e.clientY };
-        },
-        true,
-    );
-
-    block.addEventListener(
-        "mouseup",
-        () => {
-            if (!caretPoint) {
-                return;
-            }
-            const point = caretPoint;
-            caretPoint = null;
-            placeCaretAtPoint(block, point.x, point.y);
         },
         true,
     );
@@ -359,3 +268,27 @@ export function ensureFoldListeners(block: HTMLElement): void {
         true,
     );
 }
+
+/** 绑定输入法组合状态跟踪（全局仅一次） */
+function bindCompositionTracking(): void {
+    if (composingBound) {
+        return;
+    }
+    composingBound = true;
+    window.addEventListener(
+        "compositionstart",
+        () => {
+            composing = true;
+        },
+        true,
+    );
+    window.addEventListener(
+        "compositionend",
+        () => {
+            composing = false;
+        },
+        true,
+    );
+}
+
+
