@@ -6,7 +6,7 @@ import { getCaretOffset, setCaretOffset } from "./foldCaret";
 import { syncLineNumbers } from "./lineNumbers";
 import { collectRenderedLineHtmls, escapeHtml, splitLines } from "./foldLines";
 import { buildSignature, remapFolded } from "./foldState";
-import { installEditGuard } from "./foldEditGuard";
+import { ensureEditGuard } from "./foldEditGuard";
 
 /** 按块 ID 记录的折叠状态（起始行集合），跨重渲染保留 */
 const foldedMap = new Map<string, Set<number>>();
@@ -14,6 +14,9 @@ const foldedMap = new Map<string, Set<number>>();
 const renderedMap = new WeakMap<HTMLElement, string>();
 /** 代码元素上一次渲染的文本行，用于重映射折叠状态 */
 const prevItemsMap = new WeakMap<HTMLElement, string[]>();
+/** 已绑定事件的块（用 WeakSet 而非 DOM 属性，避免思源重渲染后属性残留导致事件丢失） */
+const boundBlocks = new WeakSet<HTMLElement>();
+
 /** 行结构变化后同步折叠视图的延迟（ms） */
 const SYNC_DELAY = 180;
 /** 是否有输入法组合输入进行中（此时任何 DOM 重写都会打断候选词） */
@@ -65,11 +68,14 @@ export function renderFoldView(block: HTMLElement, force = false): void {
         return;
     }
     const hljs = getHljs(block);
-    if (!hljs || hljs.getAttribute("data-render") !== "true") {
+    const codeEl = getCodeEl(block);
+    if (!hljs || !codeEl || composing) {
         return;
     }
-    const codeEl = getCodeEl(block);
-    if (!codeEl || composing) {
+    const rendered = hasRenderedLines(codeEl);
+    // 未渲染时必须等思源高亮完成，否则会把未高亮的纯文本当成原始内容；
+    // 已有行元素时直接按现有 DOM 更新，避免折叠状态与显示不一致
+    if (!rendered && hljs.getAttribute("data-render") !== "true") {
         return;
     }
 
@@ -84,7 +90,6 @@ export function renderFoldView(block: HTMLElement, force = false): void {
     } else {
         foldedMap.delete(blockId);
     }
-    const rendered = hasRenderedLines(codeEl);
 
     // 已经没有可折叠区间：把行元素还原成普通高亮 HTML
     if (regions.size === 0) {
@@ -189,10 +194,11 @@ function hitFoldGutter(e: MouseEvent, line: Element): boolean {
 /** 为块绑定实时同步与折叠箭头点击事件 */
 export function ensureFoldListeners(block: HTMLElement): void {
     bindCompositionTracking();
-    if (block.getAttribute("data-fold-bound") === "1") {
+    ensureEditGuard((target, startLine) => toggleFold(target, startLine));
+    if (boundBlocks.has(block)) {
         return;
     }
-    block.setAttribute("data-fold-bound", "1");
+    boundBlocks.add(block);
 
     let syncTimer = 0;
     const scheduleSync = (): void => {
@@ -210,10 +216,6 @@ export function ensureFoldListeners(block: HTMLElement): void {
     block.addEventListener("input", syncIfInCode, true);
     block.addEventListener("keyup", syncIfInCode, true);
     block.addEventListener("focusout", scheduleSync, true);
-    installEditGuard(block, {
-        getCodeEl: () => getCodeEl(block),
-        unfoldAt: (startLine) => toggleFold(block, startLine),
-    });
 
     block.addEventListener(
         "mousedown",

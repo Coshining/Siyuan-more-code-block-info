@@ -3,25 +3,18 @@
  *
  * 被折叠的行是 `display: none`，但仍留在 DOM 里。把光标放到折叠区后一行并在行首退格时，
  * 浏览器会向前跨过隐藏行去合并文本，结果把折叠内容删掉。
- * 这里在折叠边界上拦截 Backspace / Delete：第一次先展开对应的折叠区，
- * 再按一次才真正执行合并，既不丢内容也不会让人无从下手。
+ * 思源会先于代码块处理按键，因此这里在 window 捕获阶段拦截 Backspace / Delete：
+ * 第一次先展开对应的折叠区，再按一次才真正执行合并。
  */
 
-export interface EditGuardHandlers {
-    /** 取代码正文元素 */
-    getCodeEl: () => HTMLElement | null;
-    /** 展开以指定行开头的折叠区 */
-    unfoldAt: (startLine: number) => void;
-}
-
-/** 光标所在的行元素（选区需落在代码内且为行内 `.code-line`） */
-function caretLine(codeEl: HTMLElement): HTMLElement | null {
+/** 光标所在的行元素（选区需落在折叠行元素内） */
+function caretLine(): HTMLElement | null {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
         return null;
     }
     const anchor = selection.anchorNode;
-    if (!anchor || !codeEl.contains(anchor)) {
+    if (!anchor) {
         return null;
     }
     const element = anchor.nodeType === Node.ELEMENT_NODE ? (anchor as HTMLElement) : anchor.parentElement;
@@ -70,19 +63,21 @@ function findFoldStart(hiddenLine: Element): number | null {
     return null;
 }
 
-/** 安装折叠边界拦截（每个块一次） */
-export function installEditGuard(block: HTMLElement, handlers: EditGuardHandlers): void {
-    block.addEventListener(
+let installed = false;
+
+/** 安装折叠边界拦截（全局仅一次） */
+export function ensureEditGuard(unfoldAt: (block: HTMLElement, startLine: number) => void): void {
+    if (installed) {
+        return;
+    }
+    installed = true;
+    window.addEventListener(
         "keydown",
         (e: KeyboardEvent) => {
             if (e.key !== "Backspace" && e.key !== "Delete") {
                 return;
             }
-            const codeEl = handlers.getCodeEl();
-            if (!codeEl) {
-                return;
-            }
-            const line = caretLine(codeEl);
+            const line = caretLine();
             if (!line) {
                 return;
             }
@@ -97,10 +92,11 @@ export function installEditGuard(block: HTMLElement, handlers: EditGuardHandlers
             if (!isHiddenLine(neighbor)) {
                 return;
             }
-            // 先展开被折叠的区域，再按一次才会合并
+            const block = line.closest<HTMLElement>(".code-block");
             const startLine = findFoldStart(neighbor as Element);
-            if (startLine !== null) {
-                handlers.unfoldAt(startLine);
+            if (block && startLine !== null) {
+                // 下一帧再展开，避免在按键事件处理中重建 DOM
+                window.setTimeout(() => unfoldAt(block, startLine), 0);
             }
             e.preventDefault();
             e.stopPropagation();
