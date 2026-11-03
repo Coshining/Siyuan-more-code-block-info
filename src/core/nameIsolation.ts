@@ -76,6 +76,21 @@ export function registerNameInput(input: HTMLInputElement, value: string): void 
     ensureInstalled();
 }
 
+/** 卸载全局事件隔离监听（插件禁用时调用） */
+export function uninstallNameIsolation(): void {
+    if (!installed) {
+        return;
+    }
+    installed = false;
+    for (const type of ISOLATED_EVENTS) {
+        if (type === "keydown") {
+            window.removeEventListener(type, onKeyDown, true);
+        } else {
+            window.removeEventListener(type, stopIfNameInput, true);
+        }
+    }
+}
+
 /** 读取输入框上次提交的值 */
 export function getCommittedName(input: HTMLInputElement): string {
     return committedMap.get(input) ?? "";

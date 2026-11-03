@@ -19,6 +19,9 @@ const POLL_INTERVAL = 120;
 
 let installed = false;
 
+/** 正在运行的聚焦轮询定时器，卸载时统一清理 */
+const timers = new Set<number>();
+
 /** 正在组合输入（输入法）的输入框，此时不动光标，避免打断候选词 */
 const composingInputs = new WeakSet<HTMLInputElement>();
 
@@ -93,10 +96,12 @@ function startFocusPolling(input: HTMLInputElement): void {
     const timer = window.setInterval(() => {
         if (document.activeElement !== input) {
             window.clearInterval(timer);
+            timers.delete(timer);
             return;
         }
         collapseToEnd(input);
     }, POLL_INTERVAL);
+    timers.add(timer);
 }
 
 /** focus：等默认聚焦行为（点击定位）结束后再判断是否被整体选中 */
@@ -122,4 +127,20 @@ export function ensureCaretGuard(): void {
     window.addEventListener("focus", onFocus, true);
     window.addEventListener("compositionstart", onCompositionStart, true);
     window.addEventListener("compositionend", onCompositionEnd, true);
+}
+
+/** 卸载全局光标保护监听与轮询定时器（插件禁用时调用） */
+export function uninstallCaretGuard(): void {
+    if (installed) {
+        installed = false;
+        for (const type of GUARD_EVENTS) {
+            window.removeEventListener(type, onGuardEvent, true);
+        }
+        window.removeEventListener("keydown", onKeyDown, true);
+        window.removeEventListener("focus", onFocus, true);
+        window.removeEventListener("compositionstart", onCompositionStart, true);
+        window.removeEventListener("compositionend", onCompositionEnd, true);
+    }
+    timers.forEach((timer) => window.clearInterval(timer));
+    timers.clear();
 }

@@ -1,7 +1,12 @@
-import { ATTR_THEME, FOLLOW_SIYUAN, THEME_OPTIONS } from "../constants";
+import { ATTR_THEME, FOLLOW_SIYUAN, MARKER, THEME_OPTIONS } from "../constants";
 import { getConfig, getI18n } from "../context";
 import { getBlockId, removeBlockAttr, setBlockAttr } from "../api";
 import { ensureThemeCss } from "./themeCss";
+
+/** 每个代码块主题下拉的清理函数 */
+const disposerByBlock = new WeakMap<HTMLElement, () => void>();
+/** 所有仍存活的主题下拉，用于处理代码块已被移除的情况 */
+const disposers = new Set<() => void>();
 
 /** 计算块最终生效的主题：块属性 → 全局默认 → 空（跟随思源） */
 function resolveTheme(blockTheme: string | null): string {
@@ -30,7 +35,7 @@ export function applyThemeToBlock(block: HTMLElement): void {
 
 /** 刷新所有代码块的主题（全局默认主题变化时调用） */
 export function refreshAllThemes(): void {
-    document.querySelectorAll<HTMLElement>(".code-block").forEach((block) => {
+    document.querySelectorAll<HTMLElement>(`.code-block[${MARKER}]`).forEach((block) => {
         applyThemeToBlock(block);
     });
 }
@@ -176,5 +181,28 @@ export function createThemeSelector(block: HTMLElement): HTMLElement {
     wrap.appendChild(trigger);
     wrap.appendChild(menu);
     updateLabel();
+
+    // 卸载时移除菜单（可能已挂到 body）与全局事件监听
+    const dispose = (): void => {
+        document.removeEventListener("pointerdown", onDocPointerDown, true);
+        menu.remove();
+        disposers.delete(dispose);
+        disposerByBlock.delete(block);
+    };
+    disposers.add(dispose);
+    disposerByBlock.set(block, dispose);
+
     return wrap;
+}
+
+/** 卸载单个代码块的主题下拉 */
+export function destroyThemeSelector(block: HTMLElement): void {
+    disposerByBlock.get(block)?.();
+}
+
+/** 卸载所有主题下拉（插件卸载或编辑器销毁时兜底） */
+export function destroyAllThemeSelectors(): void {
+    for (const dispose of [...disposers]) {
+        dispose();
+    }
 }

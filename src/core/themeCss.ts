@@ -3,6 +3,8 @@ import { logger } from "../util/logger";
 
 const loaded = new Set<string>();
 const pending = new Map<string, Promise<void>>();
+/** 插件卸载后置为 false，阻止仍在途的请求把样式重新注入 */
+let active = true;
 
 function styleId(name: string): string {
     return `code-theme-css-${name.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -63,6 +65,9 @@ async function loadTheme(name: string): Promise<void> {
             throw new Error(`HTTP ${resp.status}`);
         }
         const css = await resp.text();
+        if (!active) {
+            return;
+        }
         injectThemeStyle(name, css);
         loaded.add(name);
     } catch (error) {
@@ -86,8 +91,23 @@ function injectThemeStyle(name: string, css: string): void {
 
 /** 确保指定主题的作用域 CSS 已加载（幂等，异步加载） */
 export function ensureThemeCss(name: string): void {
-    if (!name || loaded.has(name) || pending.has(name)) {
+    if (!active || !name || loaded.has(name) || pending.has(name)) {
         return;
     }
     pending.set(name, loadTheme(name));
+}
+
+/** 插件重新启用时恢复主题加载 */
+export function resetThemeCss(): void {
+    active = true;
+}
+
+/** 移除所有由插件注入的主题样式，并终止后续加载 */
+export function removeThemeStyles(): void {
+    active = false;
+    document
+        .querySelectorAll<HTMLStyleElement>('style[id^="code-theme-css-"]')
+        .forEach((style) => style.remove());
+    loaded.clear();
+    pending.clear();
 }
