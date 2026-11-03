@@ -67,6 +67,10 @@ export function computeFoldRegions(lines: string[]): Map<number, FoldRegion> {
 
     // 缩进折叠
     for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "") {
+            // 空行不作为折叠起点，避免箭头出现在空行上
+            continue;
+        }
         let j = i + 1;
         while (j < lines.length && lines[j].trim() === "") {
             j += 1;
@@ -82,6 +86,10 @@ export function computeFoldRegions(lines: string[]): Map<number, FoldRegion> {
             } else {
                 break;
             }
+        }
+        // 末尾的空行属于下一段代码的分隔，不纳入折叠范围
+        while (end > j && lines[end].trim() === "") {
+            end -= 1;
         }
         if (!regions.has(i)) {
             regions.set(i, { start: i, end, depth: indents[i], kind: "indent" });
